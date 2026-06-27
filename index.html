@@ -1,32 +1,413 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Test caméra</title>
-<style>
-  body { margin:0; background:#000; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; font-family:sans-serif; }
-  video { width:100%; max-height:70vh; object-fit:cover; }
-  button { margin-top:20px; padding:16px 32px; background:#E94560; color:white; border:none; border-radius:12px; font-size:1.1rem; font-weight:700; cursor:pointer; }
-  #msg { color:white; margin-top:16px; font-size:0.9rem; text-align:center; padding:0 20px; }
-</style>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+  <title>Solution — Jeu d'équilibre</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --dark:   #0D0D1A;
+      --card:   #16162A;
+      --border: #2A2A4A;
+      --accent: #E94560;
+      --gold:   #F5C842;
+      --muted:  #8888AA;
+      --text:   #E8E8F0;
+      --green:  #2ECC71;
+      --orange: #E67E22;
+      --red:    #E74C3C;
+      --font:   'Segoe UI', system-ui, sans-serif;
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      font-family: var(--font);
+      background: var(--dark);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    /* ══ ÉCRAN D'ACCUEIL ══════════════════════════════════ */
+    #ecran-accueil {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 24px 18px;
+      overflow-y: auto;
+      z-index: 10;
+    }
+
+    .inner { width: 100%; max-width: 400px; text-align: center; }
+
+    .logo {
+      display: block; font-size: 52px; margin-bottom: 12px;
+      animation: flotter 3s ease-in-out infinite;
+    }
+    @keyframes flotter {
+      0%,100% { transform: translateY(0); }
+      50%      { transform: translateY(-7px); }
+    }
+
+    h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 6px; }
+    h1 span { color: var(--accent); }
+
+    .sous-titre {
+      display: block; color: var(--muted);
+      font-size: 0.88rem; line-height: 1.5; margin-bottom: 26px;
+    }
+
+    .carte {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 16px; padding: 20px 16px; margin-bottom: 14px;
+    }
+
+    .carte-titre {
+      display: block; font-size: 0.72rem; text-transform: uppercase;
+      letter-spacing: 2px; color: var(--muted); margin-bottom: 12px;
+    }
+
+    .grille { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+
+    .btn-niveau {
+      display: flex; flex-direction: column; align-items: center; gap: 5px;
+      padding: 14px 6px; border: 2px solid transparent; border-radius: 12px;
+      cursor: pointer; font-family: var(--font); font-size: 0.75rem;
+      font-weight: 600; transition: transform 0.12s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-niveau:active { transform: scale(0.93); }
+    .btn-niveau .ico { font-size: 1.5rem; line-height: 1; display: block; }
+    .btn-niveau .lbl { color: white; display: block; }
+    .btn-niveau .det { font-size: 0.65rem; font-weight: 400; opacity: 0.85; display: block; }
+
+    .btn-d { background: linear-gradient(135deg,#1a4a2e,#27AE60); border-color:#2ECC71; }
+    .btn-i { background: linear-gradient(135deg,#4a3010,#E67E22); border-color:#F39C12; }
+    .btn-e { background: linear-gradient(135deg,#4a1010,#E74C3C); border-color:#FF6B6B; }
+
+    .info {
+      background: rgba(245,200,66,0.08); border: 1px solid rgba(245,200,66,0.25);
+      border-radius: 10px; padding: 12px 14px; font-size: 0.82rem;
+      color: var(--gold); line-height: 1.6; text-align: left;
+    }
+    .info strong { display: block; margin-bottom: 4px; }
+
+    /* ══ ÉCRAN AR ═════════════════════════════════════════ */
+    #ecran-ar {
+      position: fixed; inset: 0;
+      display: none; flex-direction: column;
+      z-index: 20;
+    }
+
+    /* Vidéo plein écran en fond */
+    #camera-video {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      background: #000;
+    }
+
+    /* Overlay semi-transparent en haut */
+    #barre-ar {
+      position: absolute; top: 0; left: 0; right: 0;
+      z-index: 30;
+      background: rgba(13,13,26,0.82);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      padding: 12px 14px;
+      padding-top: max(12px, env(safe-area-inset-top));
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .tag {
+      font-size: 0.7rem; font-weight: 700; padding: 4px 10px;
+      border-radius: 20px; text-transform: uppercase; letter-spacing: 1px;
+      white-space: nowrap;
+    }
+    .tag-d { background: #27AE60; color: white; }
+    .tag-i { background: #E67E22; color: white; }
+    .tag-e { background: #E74C3C; color: white; }
+
+    #barre-titre { font-size: 0.78rem; color: var(--muted); flex: 1; text-align: center; }
+
+    #btn-retour {
+      background: var(--accent); color: white; border: none;
+      border-radius: 8px; padding: 8px 14px;
+      font-family: var(--font); font-size: 0.8rem; font-weight: 700;
+      cursor: pointer; white-space: nowrap;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Bulle d'étapes flottante sur la caméra */
+    #bulle-etapes {
+      position: absolute; bottom: 32px; left: 16px; right: 16px;
+      z-index: 30;
+      background: rgba(13,13,26,0.88);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px; padding: 16px 18px;
+    }
+
+    .etape-item {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,0.06);
+      font-size: 0.88rem; line-height: 1.4;
+    }
+    .etape-item:last-child { border-bottom: none; padding-bottom: 0; }
+
+    .etape-num {
+      min-width: 24px; height: 24px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.7rem; font-weight: 700; flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    /* Message d'erreur caméra */
+    #erreur-camera {
+      position: absolute; inset: 0; z-index: 35;
+      display: none; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: var(--dark); padding: 30px 24px; text-align: center; gap: 14px;
+    }
+    #erreur-camera .ico-err { font-size: 48px; }
+    #erreur-camera h2 { font-size: 1.1rem; color: var(--accent); }
+    #erreur-camera p { font-size: 0.88rem; color: var(--muted); line-height: 1.6; }
+    #erreur-camera .btn-err {
+      background: var(--accent); color: white; border: none;
+      border-radius: 10px; padding: 12px 24px;
+      font-family: var(--font); font-size: 0.88rem; font-weight: 700;
+      cursor: pointer; margin-top: 6px;
+    }
+
+    /* Chargement caméra */
+    #chargement-camera {
+      position: absolute; inset: 0; z-index: 34;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: var(--dark); gap: 14px;
+    }
+    .spinner {
+      width: 44px; height: 44px;
+      border: 3px solid var(--border); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin 0.85s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #chargement-camera p { color: var(--muted); font-size: 0.88rem; }
+  </style>
 </head>
 <body>
-<video id="v" autoplay playsinline muted></video>
-<button onclick="start()">▶ Lancer la caméra</button>
-<p id="msg">Appuyez sur le bouton</p>
+
+<!-- ══ ÉCRAN D'ACCUEIL ════════════════════════════════ -->
+<div id="ecran-accueil">
+  <div class="inner">
+    <span class="logo">⚖️</span>
+    <h1>Jeu d'<span>équilibre</span></h1>
+    <p class="sous-titre">Choisissez votre niveau — la solution<br>s'affiche par-dessus la caméra</p>
+
+    <div class="carte">
+      <span class="carte-titre">Votre niveau</span>
+      <div class="grille">
+        <button class="btn-niveau btn-d" onclick="lancerAR('debutant')">
+          <span class="ico">⭐</span>
+          <span class="lbl">Débutant</span>
+          <span class="det">6 étapes</span>
+        </button>
+        <button class="btn-niveau btn-i" onclick="lancerAR('intermediaire')">
+          <span class="ico">⭐⭐</span>
+          <span class="lbl">Intermédiaire</span>
+          <span class="det">3 étapes</span>
+        </button>
+        <button class="btn-niveau btn-e" onclick="lancerAR('expert')">
+          <span class="ico">⭐⭐⭐</span>
+          <span class="lbl">Expert</span>
+          <span class="det">1 indice</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="info">
+      <strong>📱 Comment ça marche</strong>
+      Appuyez sur votre niveau. La caméra s'ouvre et les étapes de la solution
+      s'affichent en superposition sur l'image. Lisez les étapes en tenant le
+      téléphone au-dessus du jeu.
+    </div>
+  </div>
+</div>
+
+<!-- ══ ÉCRAN AR ══════════════════════════════════════ -->
+<div id="ecran-ar">
+
+  <!-- Flux vidéo caméra -->
+  <video id="camera-video" autoplay playsinline muted></video>
+
+  <!-- Chargement -->
+  <div id="chargement-camera">
+    <div class="spinner"></div>
+    <p>Démarrage de la caméra…</p>
+  </div>
+
+  <!-- Erreur caméra -->
+  <div id="erreur-camera">
+    <span class="ico-err">📵</span>
+    <h2>Caméra inaccessible</h2>
+    <p id="msg-erreur">Le navigateur n'a pas pu accéder à la caméra.</p>
+    <button class="btn-err" onclick="retour()">← Retour</button>
+  </div>
+
+  <!-- Barre du haut -->
+  <div id="barre-ar">
+    <span id="tag-niveau" class="tag"></span>
+    <span id="barre-titre">Solution en cours</span>
+    <button id="btn-retour" onclick="retour()">← Retour</button>
+  </div>
+
+  <!-- Étapes superposées sur la caméra -->
+  <div id="bulle-etapes"></div>
+
+</div>
+
+<!-- ══ DONNÉES — modifiez uniquement les textes ══════ -->
 <script>
-async function start() {
-  const msg = document.getElementById('msg');
-  msg.textContent = 'Demande d\'accès...';
+const NIVEAUX = {
+
+  debutant: {
+    label: '⭐ Débutant', tag: 'tag-d',
+    couleur: '#2ECC71',
+    etapes: [
+      "Prenez la pièce rouge",
+      "Posez-la à gauche du centre",
+      "Inclinez la pièce bleue vers vous",
+      "Glissez la pièce verte à droite",
+      "Reposez la pièce jaune au centre",
+      "L'équilibre est atteint !"
+    ]
+  },
+
+  intermediaire: {
+    label: '⭐⭐ Intermédiaire', tag: 'tag-i',
+    couleur: '#F1C40F',
+    etapes: [
+      "Rouge à gauche, bleue inclinée",
+      "Verte à droite, jaune au centre",
+      "Relâcher doucement — équilibre !"
+    ]
+  },
+
+  expert: {
+    label: '⭐⭐⭐ Expert', tag: 'tag-e',
+    couleur: '#FF6B6B',
+    etapes: [
+      "Axe rouge-gauche / bleu-incliné"
+    ]
+  }
+
+};
+
+/* ══ Logique ════════════════════════════════════════ */
+let streamActif = null;
+
+async function lancerAR(niveau) {
+  const data = NIVEAUX[niveau];
+
+  // Prépare l'écran AR
+  document.getElementById('ecran-accueil').style.display = 'none';
+  document.getElementById('ecran-ar').style.display      = 'flex';
+  document.getElementById('chargement-camera').style.display = 'flex';
+  document.getElementById('erreur-camera').style.display     = 'none';
+
+  // Tag du niveau
+  const tag = document.getElementById('tag-niveau');
+  tag.textContent = data.label;
+  tag.className   = 'tag ' + data.tag;
+
+  // Construit les étapes
+  const bulle = document.getElementById('bulle-etapes');
+  bulle.innerHTML = data.etapes.map((texte, i) => `
+    <div class="etape-item">
+      <div class="etape-num" style="background:${data.couleur}22; color:${data.couleur}; border:1px solid ${data.couleur}55">
+        ${i + 1}
+      </div>
+      <span>${texte}</span>
+    </div>
+  `).join('');
+
+  // Lance la caméra
   try {
-    const s = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}, audio:false});
-    document.getElementById('v').srcObject = s;
-    msg.textContent = '✅ Caméra active !';
-  } catch(e) {
-    msg.textContent = '❌ Erreur : ' + e.name + ' — ' + e.message;
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: 'environment' }, // caméra arrière
+        width:  { ideal: 1280 },
+        height: { ideal: 720 }
+      },
+      audio: false
+    });
+
+    streamActif = stream;
+    const video = document.getElementById('camera-video');
+    video.srcObject = stream;
+
+    video.onloadedmetadata = () => {
+      video.play();
+      document.getElementById('chargement-camera').style.display = 'none';
+    };
+
+  } catch (err) {
+    // Affiche un message d'erreur clair selon la cause
+    document.getElementById('chargement-camera').style.display = 'none';
+    document.getElementById('erreur-camera').style.display     = 'flex';
+
+    let msg = "Vérifiez que la caméra n'est pas utilisée par une autre app.";
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      msg = "Vous avez refusé l'accès à la caméra. Allez dans les réglages de votre navigateur et autorisez la caméra pour ce site.";
+    } else if (err.name === 'NotFoundError') {
+      msg = "Aucune caméra détectée sur cet appareil.";
+    } else if (err.name === 'NotReadableError') {
+      msg = "La caméra est déjà utilisée par une autre application. Fermez-la et réessayez.";
+    } else if (err.name === 'OverconstrainedError') {
+      // Réessaie sans contrainte de caméra arrière
+      relancerSansContrainte();
+      return;
+    }
+    document.getElementById('msg-erreur').textContent = msg;
   }
 }
+
+// Fallback : si facingMode:'environment' échoue, on réessaie sans contrainte
+async function relancerSansContrainte() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    streamActif = stream;
+    const video = document.getElementById('camera-video');
+    video.srcObject = stream;
+    video.onloadedmetadata = () => {
+      video.play();
+      document.getElementById('chargement-camera').style.display = 'none';
+    };
+  } catch (err) {
+    document.getElementById('chargement-camera').style.display = 'none';
+    document.getElementById('erreur-camera').style.display     = 'flex';
+    document.getElementById('msg-erreur').textContent =
+      "Impossible d'accéder à la caméra : " + err.message;
+  }
+}
+
+function retour() {
+  // Arrête le flux caméra
+  if (streamActif) {
+    streamActif.getTracks().forEach(t => t.stop());
+    streamActif = null;
+  }
+
+  const video = document.getElementById('camera-video');
+  video.srcObject = null;
+
+  document.getElementById('ecran-ar').style.display      = 'none';
+  document.getElementById('ecran-accueil').style.display = 'flex';
+}
 </script>
+
 </body>
 </html>
