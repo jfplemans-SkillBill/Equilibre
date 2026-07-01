@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+  <title>Jeu d'équilibre — Solution AR</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/aframe@1.5.0/dist/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --dark:   #0D0D1A;
+      --card:   rgba(13,13,26,0.90);
+      --border: rgba(255,255,255,0.10);
+      --accent: #E94560;
+      --gold:   #F5C842;
+      --muted:  #8888AA;
+      --green:  #27AE60;
+      --font:   'Segoe UI', system-ui, sans-serif;
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: #000;
+      font-family: var(--font);
+      overflow: hidden;
+      color: white;
+    }
+
+    /* ── Scène AR plein écran ── */
+    a-scene {
+      position: fixed !important;
+      inset: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    /* ── Écran de chargement ── */
+    #ecran-chargement {
+      position: fixed; inset: 0; z-index: 900;
+      background: var(--dark);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 16px;
+    }
+    #ecran-chargement.cache { display: none; }
+
+    .spinner {
+      width: 50px; height: 50px;
+      border: 3px solid #2A2A4A;
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.85s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #ecran-chargement p { color: var(--muted); font-size: 0.9rem; text-align: center; padding: 0 30px; line-height: 1.6; }
+
+    /* ── Indicateur de scan ── */
+    #scan-hint {
+      position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 100; text-align: center; pointer-events: none;
+    }
+    .cadre-scan {
+      width: 190px; height: 190px;
+      border: 3px solid rgba(255,255,255,0.55);
+      border-radius: 22px;
+      margin: 0 auto 14px;
+      animation: pulse-cadre 2s ease-in-out infinite;
+    }
+    @keyframes pulse-cadre {
+      0%,100% { border-color: rgba(255,255,255,0.35); }
+      50%      { border-color: rgba(255,255,255,0.90); }
+    }
+    #scan-hint p {
+      color: rgba(255,255,255,0.85); font-size: 0.82rem;
+      background: rgba(13,13,26,0.65); border-radius: 10px; padding: 6px 14px;
+      display: inline-block;
+    }
+
+    /* ── Étiquette niveau (haut) ── */
+    #label-niveau {
+      position: fixed;
+      top: max(14px, env(safe-area-inset-top));
+      left: 50%; transform: translateX(-50%);
+      z-index: 800;
+      background: var(--card);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 22px; padding: 7px 18px;
+      font-size: 0.8rem; font-weight: 700;
+      white-space: nowrap;
+    }
+
+    /* ── Panneau du bas ── */
+    #panneau-bas {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      z-index: 800;
+      background: var(--card);
+      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      border-top: 1px solid var(--border);
+      padding: 14px 16px max(14px, env(safe-area-inset-bottom));
+      display: flex; flex-direction: column; gap: 10px;
+    }
+
+    /* Barre de progression */
+    #barre-progression {
+      display: flex; align-items: center; gap: 8px;
+    }
+    #barre-progression span { font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
+    #piste {
+      flex: 1; height: 4px;
+      background: rgba(255,255,255,0.12);
+      border-radius: 4px; overflow: hidden;
+    }
+    #jauge {
+      height: 100%; background: var(--accent);
+      border-radius: 4px;
+      transition: width 0.4s ease;
+    }
+
+    /* Rangée de pastilles */
+    #pastilles {
+      display: flex; justify-content: center; gap: 6px;
+    }
+    .pastille {
+      width: 28px; height: 28px; border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.06);
+      font-size: 0.7rem; font-weight: 700; color: var(--muted);
+      display: flex; align-items: center; justify-content: center;
+      cursor: default; flex-shrink: 0;
+      transition: all 0.3s;
+    }
+    .pastille.vu       { background: rgba(39,174,96,0.25); border-color: var(--green); color: var(--green); }
+    .pastille.actuel   { background: var(--accent); border-color: var(--accent); color: white; }
+    .pastille.glb      { background: rgba(245,200,66,0.20); border-color: var(--gold); color: var(--gold); }
+    .pastille.yt       { background: rgba(255,0,0,0.20); border-color: #FF4444; color: #FF4444; }
+
+    /* Boutons d'action */
+    #zone-boutons { display: flex; gap: 10px; }
+
+    .btn {
+      flex: 1; padding: 12px 10px;
+      border: none; border-radius: 14px;
+      font-family: var(--font); font-size: 0.85rem; font-weight: 700;
+      cursor: pointer; color: white;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      transition: transform 0.12s, opacity 0.12s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .btn:active { transform: scale(0.94); }
+
+    .btn-prev  { background: rgba(255,255,255,0.10); flex: 0 0 48px; border-radius: 50%; padding: 0; font-size: 1rem; }
+    .btn-next  { background: var(--accent); }
+    .btn-glb   { background: linear-gradient(135deg,#7B3F00,#F5A623); }
+    .btn-yt    { background: linear-gradient(135deg,#8B0000,#FF4444); }
+    .btn.cache { display: none; }
+
+    /* ── Overlays plein écran (image indice / vidéo YT) ── */
+    .overlay {
+      position: fixed; inset: 0; z-index: 950;
+      background: rgba(0,0,0,0.96);
+      display: none; flex-direction: column;
+      align-items: center; justify-content: center; gap: 0;
+    }
+    .overlay.visible { display: flex; }
+
+    .overlay-header {
+      width: 100%; padding: 12px 16px;
+      padding-top: max(12px, env(safe-area-inset-top));
+      display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      flex-shrink: 0;
+    }
+    .overlay-header span { font-size: 0.85rem; font-weight: 700; }
+    .btn-fermer {
+      background: rgba(255,255,255,0.10);
+      border: none; border-radius: 8px; padding: 7px 14px;
+      color: white; font-family: var(--font); font-size: 0.82rem;
+      font-weight: 700; cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Image indice */
+    #overlay-image .overlay-body { flex: 1; width: 100%; display: flex; align-items: center; justify-content: center; padding: 16px; }
+    #img-indice { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 10px; }
+
+    /* Vidéo YouTube */
+    #overlay-video .overlay-body { flex: 1; width: 100%; display: flex; align-items: center; justify-content: center; padding: 0; }
+    #iframe-yt {
+      width: 100%; aspect-ratio: 16/9;
+      border: none; max-height: 60vh;
+    }
+
+    /* ── Overlay GLB (par-dessus la scène AR) ── */
+    /* Le GLB s'affiche directement dans la scène A-Frame, pas besoin d'overlay */
+  </style>
+</head>
+<body>
+
+<!-- ── Chargement ─────────────────────────────────────────── -->
+<div id="ecran-chargement">
+  <div class="spinner"></div>
+  <p>Démarrage de la caméra…<br>Acceptez l'accès si demandé.</p>
+</div>
+
+<!-- ── Indicateur scan ────────────────────────────────────── -->
+<div id="scan-hint">
+  <div class="cadre-scan"></div>
+  <p>Pointez vers le marqueur</p>
+</div>
+
+<!-- ── Étiquette niveau ───────────────────────────────────── -->
+<div id="label-niveau">🔍 Indice 1</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     SCÈNE AR MindAR
+     Le modèle GLB s'affiche ici par-dessus le marqueur
+══════════════════════════════════════════════════════════ -->
+<a-scene
+  id="scene-ar"
+  mindar-image="imageTargetSrc: targets.mind; autoStart: true; uiLoading: no; uiError: no; uiScanning: no;"
+  color-space="sRGB"
+  renderer="colorManagement: true; physicallyCorrectLights: true;"
+  vr-mode-ui="enabled: false"
+  device-orientation-permission-ui="enabled: false">
+
+  <a-assets>
+    <!-- ✏️ Votre fichier GLB solution — placez-le dans models/ sur GitHub -->
+    <a-asset-item id="glb-solution" src="models/solution.glb"></a-asset-item>
+  </a-assets>
+
+  <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+  <a-entity id="ar-target" mindar-image-target="targetIndex: 0">
+
+    <!-- Modèle GLB solution — caché jusqu'au bouton Solution 3D -->
+    <a-gltf-model
+      id="modele-glb"
+      src="#glb-solution"
+      position="0 0.05 0"
+      rotation="-90 0 0"
+      scale="0.12 0.12 0.12"
+      visible="false">
+    </a-gltf-model>
+
+    <!-- Lumières -->
+    <a-light type="ambient"     color="#ffffff" intensity="0.7"></a-light>
+    <a-light type="directional" color="#ffffff" intensity="0.9" position="1 2 1"></a-light>
+
+  </a-entity>
+
+</a-scene>
+
+<!-- ══════════════════════════════════════════════════════════
+     OVERLAY — Image indice
+══════════════════════════════════════════════════════════ -->
+<div id="overlay-image" class="overlay">
+  <div class="overlay-header">
+    <span id="label-overlay-img">🔍 Indice 1</span>
+    <button class="btn-fermer" onclick="fermerOverlay()">✕ Fermer</button>
+  </div>
+  <div class="overlay-body">
+    <img id="img-indice" src="" alt="Indice"/>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     OVERLAY — Vidéo YouTube
+══════════════════════════════════════════════════════════ -->
+<div id="overlay-video" class="overlay">
+  <div class="overlay-header">
+    <span>▶ Solution vidéo</span>
+    <button class="btn-fermer" onclick="fermerVideo()">✕ Fermer</button>
+  </div>
+  <div class="overlay-body">
+    <iframe id="iframe-yt" src="" allowfullscreen
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture">
+    </iframe>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     PANNEAU BAS
+══════════════════════════════════════════════════════════ -->
+<div id="panneau-bas">
+
+  <!-- Barre de progression -->
+  <div id="barre-progression">
+    <span id="texte-progression">Indice 1 / 6</span>
+    <div id="piste"><div id="jauge" style="width:16%"></div></div>
+  </div>
+
+  <!-- Pastilles étapes -->
+  <div id="pastilles">
+    <div class="pastille actuel" id="p1">1</div>
+    <div class="pastille"       id="p2">2</div>
+    <div class="pastille"       id="p3">3</div>
+    <div class="pastille"       id="p4">4</div>
+    <div class="pastille"       id="p5">5</div>
+    <div class="pastille"       id="p6">6</div>
+    <div class="pastille glb"   id="p7">3D</div>
+    <div class="pastille yt"    id="p8">▶</div>
+  </div>
+
+  <!-- Boutons -->
+  <div id="zone-boutons">
+    <button class="btn btn-prev cache" id="btn-prev" onclick="etapePrecedente()">◀</button>
+    <button class="btn btn-next" id="btn-next" onclick="etapeSuivante()">Voir l'indice 1 🔍</button>
+    <button class="btn btn-glb  cache" id="btn-glb"  onclick="afficherGLB()">Solution 3D 🏆</button>
+    <button class="btn btn-yt   cache" id="btn-yt"   onclick="afficherVideo()">Vidéo solution ▶</button>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     ✏️  CONFIGURATION — modifiez uniquement cette section
+══════════════════════════════════════════════════════════ -->
+<script>
+
+/* ── Vos 6 fichiers image d'indices ────────────────────────────
+   Placez-les dans le dossier /indices/ sur GitHub
+   Nommez-les exactement comme indiqué ici (ou modifiez les noms)
+──────────────────────────────────────────────────────────── */
+const INDICES = [
+  { src: "indices/indice1.jpg", label: "🔍 Indice 1" },
+  { src: "indices/indice2.jpg", label: "🔍 Indice 2" },
+  { src: "indices/indice3.jpg", label: "🔍 Indice 3" },
+  { src: "indices/indice4.jpg", label: "🔍 Indice 4" },
+  { src: "indices/indice5.jpg", label: "🔍 Indice 5" },
+  { src: "indices/indice6.jpg", label: "🔍 Indice 6" },
+];
+
+/* ── Votre vidéo YouTube ───────────────────────────────────────
+   Remplacez VOTRE_ID_VIDEO par l'identifiant YouTube
+   Exemple : pour https://www.youtube.com/watch?v=dQw4w9WgXcQ
+   → l'ID est : dQw4w9WgXcQ
+──────────────────────────────────────────────────────────── */
+const YOUTUBE_ID = "y3PD9N3GqLQ";
+
+/* ══════════════════════════════════════════════════════════════
+   LOGIQUE — ne pas modifier en dessous
+══════════════════════════════════════════════════════════════ */
+let etapeActuelle  = 0;   // 0 = avant le 1er indice
+let indiceVu       = -1;  // dernier indice affiché
+let glbVisible     = false;
+
+/* ── Mise à jour de l'interface ─────────────────────────────── */
+function majInterface() {
+  const total   = INDICES.length; // 6
+  const debloque = indiceVu + 1;  // nombre d'indices débloqués
+
+  // Étiquette haut
+  const labelEl = document.getElementById('label-niveau');
+  if (etapeActuelle === 0) {
+    labelEl.textContent = "⚖️ Jeu d'équilibre";
+  } else if (etapeActuelle <= total) {
+    labelEl.textContent = INDICES[etapeActuelle - 1].label;
+  } else {
+    labelEl.textContent = "🏆 Solution";
+  }
+
+  // Progression
+  const pct = etapeActuelle === 0 ? 0 : Math.round((etapeActuelle / (total + 2)) * 100);
+  document.getElementById('jauge').style.width = pct + '%';
+  document.getElementById('texte-progression').textContent =
+    etapeActuelle <= total
+      ? 'Indice ' + Math.max(etapeActuelle, 1) + ' / ' + total
+      : 'Solution débloquée !';
+
+  // Pastilles
+  for (let i = 1; i <= total; i++) {
+    const p = document.getElementById('p' + i);
+    if (i < etapeActuelle)       p.className = 'pastille vu';
+    else if (i === etapeActuelle) p.className = 'pastille actuel';
+    else                          p.className = 'pastille';
+  }
+  document.getElementById('p7').className = etapeActuelle > total ? 'pastille glb actuel' : 'pastille glb';
+  document.getElementById('p8').className = etapeActuelle > total ? 'pastille yt' : 'pastille yt';
+
+  // Bouton précédent
+  const btnPrev = document.getElementById('btn-prev');
+  btnPrev.classList.toggle('cache', etapeActuelle <= 1);
+
+  // Bouton suivant (indices)
+  const btnNext = document.getElementById('btn-next');
+  // Boutons solution
+  const btnGlb  = document.getElementById('btn-glb');
+  const btnYt   = document.getElementById('btn-yt');
+
+  if (etapeActuelle === 0) {
+    // Avant le 1er indice : bouton pour voir indice 1
+    btnNext.classList.remove('cache');
+    btnNext.textContent = 'Voir l\'indice 1 🔍';
+    btnGlb.classList.add('cache');
+    btnYt.classList.add('cache');
+
+  } else if (etapeActuelle < total) {
+    // Entre indice 1 et 5 : bouton indice suivant
+    btnNext.classList.remove('cache');
+    btnNext.textContent = 'Voir l\'indice ' + (etapeActuelle + 1) + ' 🔍';
+    btnGlb.classList.add('cache');
+    btnYt.classList.add('cache');
+
+  } else if (etapeActuelle === total) {
+    // Dernier indice vu : propose la solution
+    btnNext.classList.add('cache');
+    btnGlb.classList.remove('cache');
+    btnYt.classList.remove('cache');
+
+  } else {
+    // Après le dernier indice (étape = total+1) : garde les deux boutons solution
+    btnNext.classList.add('cache');
+    btnGlb.classList.remove('cache');
+    btnYt.classList.remove('cache');
+  }
+}
+
+/* ── Afficher un indice ─────────────────────────────────────── */
+function afficherIndice(numero) {
+  // numero est basé sur 1
+  const indice = INDICES[numero - 1];
+  document.getElementById('img-indice').src = indice.src;
+  document.getElementById('label-overlay-img').textContent = indice.label;
+  document.getElementById('overlay-image').classList.add('visible');
+
+  // Cache le GLB si visible
+  document.getElementById('modele-glb').setAttribute('visible', 'false');
+  glbVisible = false;
+}
+
+/* ── Étape suivante ─────────────────────────────────────────── */
+function etapeSuivante() {
+  etapeActuelle++;
+  indiceVu = Math.max(indiceVu, etapeActuelle - 1);
+
+  if (etapeActuelle <= INDICES.length) {
+    afficherIndice(etapeActuelle);
+  }
+  majInterface();
+}
+
+/* ── Étape précédente ───────────────────────────────────────── */
+function etapePrecedente() {
+  if (etapeActuelle <= 1) return;
+  etapeActuelle--;
+  if (etapeActuelle >= 1) {
+    afficherIndice(etapeActuelle);
+  }
+  majInterface();
+}
+
+/* ── Fermer l'overlay image ─────────────────────────────────── */
+function fermerOverlay() {
+  document.getElementById('overlay-image').classList.remove('visible');
+}
+
+/* ── Afficher le GLB solution (dans la scène AR) ────────────── */
+function afficherGLB() {
+  fermerOverlay();
+  fermerVideo();
+  glbVisible = !glbVisible;
+  document.getElementById('modele-glb').setAttribute('visible', glbVisible ? 'true' : 'false');
+  const btn = document.getElementById('btn-glb');
+  btn.textContent = glbVisible ? 'Masquer 3D ✕' : 'Solution 3D 🏆';
+}
+
+/* ── Afficher la vidéo YouTube ──────────────────────────────── */
+function afficherVideo() {
+  document.getElementById('iframe-yt').src =
+    'https://www.youtube.com/embed/' + YOUTUBE_ID + '?autoplay=1&rel=0';
+  document.getElementById('overlay-video').classList.add('visible');
+}
+
+/* ── Fermer la vidéo (stoppe la lecture) ────────────────────── */
+function fermerVideo() {
+  document.getElementById('iframe-yt').src = '';
+  document.getElementById('overlay-video').classList.remove('visible');
+}
+
+/* ── MindAR : événements ────────────────────────────────────── */
+const scene = document.getElementById('scene-ar');
+
+scene.addEventListener('arReady', () => {
+  document.getElementById('ecran-chargement').classList.add('cache');
+});
+
+scene.addEventListener('targetFound', () => {
+  document.getElementById('scan-hint').style.display = 'none';
+});
+
+scene.addEventListener('targetLost', () => {
+  document.getElementById('scan-hint').style.display = 'block';
+});
+
+// Sécurité timeout
+setTimeout(() => {
+  document.getElementById('ecran-chargement').classList.add('cache');
+}, 15000);
+
+// Init interface
+majInterface();
+
+</script>
+</body>
+</html>
