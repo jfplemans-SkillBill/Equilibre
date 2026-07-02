@@ -302,30 +302,11 @@
     <button id="btn-retour-accueil" onclick="fermerAR()">← Retour à l'accueil</button>
   </div>
 
-  <a-scene
-    id="scene-ar"
-    mindar-image="imageTargetSrc: targets.mind; autoStart: false; uiLoading: no; uiError: no; uiScanning: no;"
-    color-space="sRGB"
-    renderer="colorManagement: true; physicallyCorrectLights: true;"
-    vr-mode-ui="enabled: false"
-    device-orientation-permission-ui="enabled: false">
-
-    <a-assets>
-      <a-asset-item id="glb-solution" src="models/solution.glb"></a-asset-item>
-    </a-assets>
-
-    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
-
-    <a-entity id="ar-target" mindar-image-target="targetIndex: 0">
-      <a-gltf-model
-        src="#glb-solution"
-        position="0 0.05 0" rotation="-90 0 0" scale="0.12 0.12 0.12">
-      </a-gltf-model>
-      <a-light type="ambient"     color="#ffffff" intensity="0.7"></a-light>
-      <a-light type="directional" color="#ffffff" intensity="0.9" position="1 2 1"></a-light>
-    </a-entity>
-
-  </a-scene>
+  <!-- La scène AR est injectée ici dynamiquement par JavaScript,
+       uniquement quand on appuie sur "Solution en 3D".
+       Elle n'existe pas dans la page au chargement, pour éviter
+       tout conflit avec le reste de la page (accueil, indices, score). -->
+  <div id="ar-scene-conteneur"></div>
 
 </div>
 
@@ -353,8 +334,6 @@ const INDICES = [
 const PROVERBE = {
   texte:  "L'intelligence, c'est la capacité de s'adapter au changement.",
   source: "— Stephen Hawking"
-  texte:  "Ce n'est pas l'intelligence qui résout les problèmes, c'est la patience.",
-  source: "— Proverbe japonais"
 };
 
 /* ── ID de votre vidéo YouTube ─────────────────────────────────
@@ -446,45 +425,61 @@ function fermerVideo() {
   document.getElementById('overlay-video').classList.remove('visible');
 }
 
-/* ── Solution AR (caméra + marqueur + GLB) ───────────────────── */
-let mindarSysteme = null;
+/* ── Solution AR (caméra + marqueur + GLB) ─────────────────────
+   La scène A-Frame/MindAR n'est créée qu'ici, au moment du clic.
+   Elle est entièrement détruite au retour : évite tout conflit
+   avec le reste de la page et libère bien la caméra.          */
+let sceneArEl = null;
 
 function ouvrirAR() {
   document.getElementById('ecran-ar').classList.add('visible');
   document.getElementById('ar-chargement').classList.add('visible');
   document.getElementById('ar-scan-hint').style.display = 'none';
 
-  const sceneEl = document.getElementById('scene-ar');
+  const conteneur = document.getElementById('ar-scene-conteneur');
+  conteneur.innerHTML =
+    '<a-scene id="scene-ar" ' +
+      'mindar-image="imageTargetSrc: targets.mind; autoStart: true; uiLoading: no; uiError: no; uiScanning: no;" ' +
+      'color-space="sRGB" ' +
+      'renderer="colorManagement: true; physicallyCorrectLights: true;" ' +
+      'vr-mode-ui="enabled: false" ' +
+      'device-orientation-permission-ui="enabled: false" ' +
+      'style="width:100%;height:100%;position:fixed;top:0;left:0;">' +
+      '<a-assets><a-asset-item id="glb-solution" src="models/solution.glb"></a-asset-item></a-assets>' +
+      '<a-camera position="0 0 0" look-controls="enabled: false"></a-camera>' +
+      '<a-entity id="ar-target" mindar-image-target="targetIndex: 0">' +
+        '<a-gltf-model src="#glb-solution" position="0 0.05 0" rotation="-90 0 0" scale="0.12 0.12 0.12"></a-gltf-model>' +
+        '<a-light type="ambient" color="#ffffff" intensity="0.7"></a-light>' +
+        '<a-light type="directional" color="#ffffff" intensity="0.9" position="1 2 1"></a-light>' +
+      '</a-entity>' +
+    '</a-scene>';
 
-  const demarrer = () => {
-    mindarSysteme = sceneEl.systems['mindar-image-system'];
-    mindarSysteme.start(); // démarre la caméra + détection du marqueur
+  sceneArEl = conteneur.querySelector('a-scene');
 
-    sceneEl.addEventListener('arReady', () => {
-      document.getElementById('ar-chargement').classList.remove('visible');
-      document.getElementById('ar-scan-hint').style.display = 'block';
-    }, { once: true });
+  sceneArEl.addEventListener('arReady', () => {
+    document.getElementById('ar-chargement').classList.remove('visible');
+    document.getElementById('ar-scan-hint').style.display = 'block';
+  }, { once: true });
 
-    sceneEl.addEventListener('targetFound', () => {
-      document.getElementById('ar-scan-hint').style.display = 'none';
-    });
-    sceneEl.addEventListener('targetLost', () => {
-      document.getElementById('ar-scan-hint').style.display = 'block';
-    });
-  };
-
-  if (sceneEl.hasLoaded) demarrer();
-  else sceneEl.addEventListener('loaded', demarrer, { once: true });
+  sceneArEl.addEventListener('targetFound', () => {
+    document.getElementById('ar-scan-hint').style.display = 'none';
+  });
+  sceneArEl.addEventListener('targetLost', () => {
+    document.getElementById('ar-scan-hint').style.display = 'block';
+  });
 
   // Sécurité : cache le chargement après 15s si arReady ne se déclenche pas
   setTimeout(() => document.getElementById('ar-chargement').classList.remove('visible'), 15000);
 }
 
 function fermerAR() {
-  if (mindarSysteme) {
-    try { mindarSysteme.stop(); } catch(e) {}
-  }
+  // Détruit complètement la scène : libère la caméra proprement
+  const conteneur = document.getElementById('ar-scene-conteneur');
+  conteneur.innerHTML = '';
+  sceneArEl = null;
+
   document.getElementById('ecran-ar').classList.remove('visible');
+  document.getElementById('ar-chargement').classList.remove('visible');
 }
 
 /* ── Initialisation ────────────────────────────────────────── */
